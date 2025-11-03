@@ -156,7 +156,7 @@ class ProjectOut(ProjectBase):
 # --- Presets ----
 
 class PresetBase(BaseModel):
-    nome: str                            # nome amigável do preset (ex: "Cliente X - Suporte")
+    nome: str
     descricao: Optional[str] = None
     cliente: Optional[str] = None
     parceiro: Optional[str] = None
@@ -172,8 +172,9 @@ class PresetBase(BaseModel):
     viagem_faturavel: Optional[str] = "No"
     local: Optional[str] = "Employee House"
     valor_euro: Optional[Union[str, float]] = 0
-    # username: str   
     username: Optional[str] = None
+    ativo: Optional[bool] = False  
+
 
 
 class PresetOut(PresetBase):
