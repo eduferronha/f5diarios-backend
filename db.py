@@ -25,17 +25,17 @@ from pymongo import MongoClient
 load_dotenv()
 
 # 🔹 Lê variáveis de ambiente (Railway também usa estas)
-MONGO_URI = os.getenv("MONGO_URI")
+MONGODB_URL = os.getenv("MONGODB_URL")
 DB_NAME = os.getenv("DB_NAME")
 
 # 🔹 Verificação para evitar erro se faltar variável
-if not MONGO_URI:
+if not MONGODB_URL:
     raise ValueError("❌ MONGO_URI não foi definida. Verifica as variáveis no Railway.")
 if not DB_NAME:
     raise ValueError("❌ DB_NAME não foi definida. Verifica as variáveis no Railway.")
 
 # 🔹 Conexão com MongoDB
-client = MongoClient(MONGO_URI)
+client = MongoClient(MONGODB_URL)
 db = client[DB_NAME]
 
 # 🔹 Coleções (exemplo)
