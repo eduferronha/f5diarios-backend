@@ -283,6 +283,34 @@ def list_user_tasks(
     raise HTTPException(status_code=401, detail="Não autorizado")
 
 
+@router.get("/all", response_model=list[dict])
+def list_all_tasks_admin(request: Request):
+    """
+    Retorna todas as tarefas (de todos os utilizadores),
+    apenas se o utilizador autenticado tiver role = 'admin'.
+    """
+    token = request.headers.get("Authorization")
+    if not token or not token.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Token ausente ou inválido.")
+
+    token = token.split(" ")[1]
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        role = payload.get("role", "user")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Token inválido.")
+
+    if role != "admin":
+        raise HTTPException(status_code=403, detail="Acesso negado — apenas administradores podem ver todas as tarefas.")
+
+    tasks = []
+    for t in tasks_collection.find().sort("data", -1):
+        t["id"] = str(t.pop("_id"))
+        tasks.append(t)
+    return tasks
+
+
+
 # --- Atualizar tarefa ---
 @router.put("/{task_id}", status_code=status.HTTP_200_OK)
 def update_task(task_id: str, updated: TaskBase, username: str = Depends(get_current_user)):
@@ -379,3 +407,6 @@ def get_atividade(request: Request, mes: int):
 
     resultados.sort(key=lambda x: (x["username"], x["data"]))
     return resultados
+
+
+#S
