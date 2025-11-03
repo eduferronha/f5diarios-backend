@@ -58,3 +58,17 @@ async def delete_preset(preset_id: str, username: str = Depends(get_current_user
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Preset não encontrado ou não pertence a este utilizador")
     return {"msg": "Preset removido com sucesso"}
+
+
+@router.patch("/presets/{preset_id}")
+async def update_preset_status(preset_id: str, data: dict, request: Request):
+    user = get_current_user_full(request)
+    preset = presets_collection.find_one({"_id": ObjectId(preset_id), "username": user["username"]})
+    if not preset:
+        raise HTTPException(status_code=404, detail="Preset não encontrado")
+
+    presets_collection.update_one(
+        {"_id": ObjectId(preset_id)},
+        {"$set": data}
+    )
+    return {"message": "Preset atualizado com sucesso"}
