@@ -6,16 +6,7 @@
 # client = MongoClient(MONGODB_URL)
 # db = client[DB_NAME]
 
-# # Coleções principais da base de dados
-# users_collection = db["users"]
-# clients_collection = db["clients"]
-# contracts_collection = db["contracts"]
-# products_collection = db["products"]
-# partners_collection = db["partners"]
-# activities_collection = db["activities"]
-# projects_collection = db["projects"]
-# presets_collection = db["presets"]
-# tasks_collection = db["tasks"]
+
 
 import os
 from dotenv import load_dotenv
@@ -27,6 +18,17 @@ load_dotenv()
 # 🔹 Lê variáveis de ambiente (Railway também usa estas)
 MONGODB_URL = os.getenv("MONGODB_URL")
 DB_NAME = os.getenv("DB_NAME")
+
+# Coleções principais da base de dados
+users_collection = db["users"]
+clients_collection = db["clients"]
+contracts_collection = db["contracts"]
+products_collection = db["products"]
+partners_collection = db["partners"]
+activities_collection = db["activities"]
+projects_collection = db["projects"]
+presets_collection = db["presets"]
+tasks_collection = db["tasks"]
 
 # 🔹 Verificação para evitar erro se faltar variável
 if not MONGODB_URL:
