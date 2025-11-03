@@ -19,16 +19,7 @@ load_dotenv()
 MONGODB_URL = os.getenv("MONGODB_URL")
 DB_NAME = os.getenv("DB_NAME")
 
-# Coleções principais da base de dados
-users_collection = db["users"]
-clients_collection = db["clients"]
-contracts_collection = db["contracts"]
-products_collection = db["products"]
-partners_collection = db["partners"]
-activities_collection = db["activities"]
-projects_collection = db["projects"]
-presets_collection = db["presets"]
-tasks_collection = db["tasks"]
+
 
 # 🔹 Verificação para evitar erro se faltar variável
 if not MONGODB_URL:
@@ -40,5 +31,15 @@ if not DB_NAME:
 client = MongoClient(MONGODB_URL)
 db = client[DB_NAME]
 
-# 🔹 Coleções (exemplo)
+
+# Coleções principais da base de dados
 users_collection = db["users"]
+clients_collection = db["clients"]
+contracts_collection = db["contracts"]
+products_collection = db["products"]
+partners_collection = db["partners"]
+activities_collection = db["activities"]
+projects_collection = db["projects"]
+presets_collection = db["presets"]
+tasks_collection = db["tasks"]
+
