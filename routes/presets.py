@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException, Depends, Request, status
 from jose import jwt, JWTError
+from bson import ObjectId
 from db import db
 from schemas import PresetBase
-from bson import ObjectId
 from config import SECRET_KEY
 
 router = APIRouter(prefix="/presets", tags=["Presets"])
@@ -12,8 +12,8 @@ users_collection = db["users"]
 ALGORITHM = "HS256"
 
 
+# --- Obter username do token JWT ---
 def get_current_username(request: Request):
-    """Extrai o username do token JWT"""
     auth_header = request.headers.get("Authorization")
     if not auth_header or not auth_header.startswith("Bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token ausente ou inválido")
@@ -29,21 +29,18 @@ def get_current_username(request: Request):
         raise HTTPException(status_code=401, detail="Token inválido")
 
 
-@router.post("/")
+# --- Criar novo preset ---
+@router.post("/", status_code=status.HTTP_201_CREATED)
 async def create_preset(preset: PresetBase, username: str = Depends(get_current_username)):
-    """Cria um novo preset para o utilizador autenticado"""
-    try:
-        data = preset.dict()
-        data["username"] = username  # 🔹 garante que é sempre o dono correto
-        result = collection.insert_one(data)
-        return {"id": str(result.inserted_id)}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Erro ao criar preset: {e}")
+    data = preset.dict()
+    data["username"] = username
+    result = collection.insert_one(data)
+    return {"id": str(result.inserted_id), **data}
 
 
-@router.get("/")
+# --- Listar presets do utilizador autenticado ---
+@router.get("/", status_code=status.HTTP_200_OK)
 async def get_user_presets(username: str = Depends(get_current_username)):
-    """Obtém todos os presets do utilizador autenticado"""
     presets = list(collection.find({"username": username}))
     for p in presets:
         p["id"] = str(p["_id"])
@@ -51,24 +48,24 @@ async def get_user_presets(username: str = Depends(get_current_username)):
     return presets
 
 
-@router.delete("/{preset_id}")
+# --- Eliminar preset ---
+@router.delete("/{preset_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_preset(preset_id: str, username: str = Depends(get_current_username)):
-    """Apaga um preset do utilizador autenticado"""
     result = collection.delete_one({"_id": ObjectId(preset_id), "username": username})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Preset não encontrado ou não pertence a este utilizador")
-    return {"msg": "Preset removido com sucesso"}
+    return None
 
 
-@router.patch("/presets/{preset_id}")
-async def update_preset_status(preset_id: str, data: dict, request: Request):
-    user = get_current_user_full(request)
-    preset = presets_collection.find_one({"_id": ObjectId(preset_id), "username": user["username"]})
+# --- Atualizar campo 'ativo' (ou qualquer outro) ---
+@router.patch("/{preset_id}", status_code=status.HTTP_200_OK)
+async def update_preset_status(preset_id: str, data: dict, username: str = Depends(get_current_username)):
+    preset = collection.find_one({"_id": ObjectId(preset_id), "username": username})
     if not preset:
         raise HTTPException(status_code=404, detail="Preset não encontrado")
 
-    presets_collection.update_one(
-        {"_id": ObjectId(preset_id)},
-        {"$set": data}
-    )
-    return {"message": "Preset atualizado com sucesso"}
+    collection.update_one({"_id": ObjectId(preset_id)}, {"$set": data})
+    updated = collection.find_one({"_id": ObjectId(preset_id)})
+    updated["id"] = str(updated["_id"])
+    updated.pop("_id", None)
+    return updated
