@@ -4,6 +4,8 @@ from bson import ObjectId
 from db import db
 from schemas import PresetBase
 from config import SECRET_KEY
+from fastapi.encoders import jsonable_encoder
+
 
 router = APIRouter(prefix="/presets", tags=["Presets"])
 
@@ -30,12 +32,27 @@ def get_current_username(request: Request):
 
 
 # --- Criar novo preset ---
+# @router.post("/", status_code=status.HTTP_201_CREATED)
+# async def create_preset(preset: PresetBase, username: str = Depends(get_current_username)):
+#     data = preset.dict()
+#     data["username"] = username
+#     result = collection.insert_one(data)
+#     return {"id": str(result.inserted_id), **data}
+
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def create_preset(preset: PresetBase, username: str = Depends(get_current_username)):
-    data = preset.dict()
-    data["username"] = username
-    result = collection.insert_one(data)
-    return {"id": str(result.inserted_id), **data}
+    try:
+        data = preset.dict()
+        data["username"] = username
+        result = collection.insert_one(data)
+        # ✅ Converter dados para tipos compatíveis com JSON
+        clean_data = jsonable_encoder(data)
+        clean_data["id"] = str(result.inserted_id)
+        return clean_data
+    except Exception as e:
+        print("❌ ERRO AO CRIAR PRESET:", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 
 # --- Listar presets do utilizador autenticado ---
