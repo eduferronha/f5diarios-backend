@@ -42,16 +42,19 @@ async def create_preset(preset: PresetBase, username: str = Depends(get_current_
         # ✅ Inserir no Mongo
         result = collection.insert_one(data)
 
-        # ✅ Converter para formato seguro
-        clean_data = jsonable_encoder(data)
-        clean_data["id"] = str(result.inserted_id)
+        # ✅ Rebuscar o documento criado (agora com _id real)
+        new_preset = collection.find_one({"_id": result.inserted_id})
 
-        # ✅ Garantir que nenhum ObjectId ou tipo estranho vai na resposta
-        return clean_data
+        # ✅ Converter o ObjectId e limpar antes de devolver
+        new_preset["id"] = str(new_preset["_id"])
+        new_preset.pop("_id", None)
+
+        return jsonable_encoder(new_preset)
 
     except Exception as e:
         print("❌ ERRO AO CRIAR PRESET:", e)
         raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+
 
 
 # --- Listar presets do utilizador autenticado ---
