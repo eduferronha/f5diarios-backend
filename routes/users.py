@@ -6,6 +6,8 @@ from db import users_collection
 from schemas import UserBase, UserOut
 from config import SECRET_KEY
 
+# Rota principal para utilizadores (prefixo /users).
+# Contém endpoints CRUD e gestão de password.
 router = APIRouter(prefix="/users", tags=["Utilizadores"])
 
 ALGORITHM = "HS256"
@@ -13,6 +15,10 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 # --- Autenticação JWT ---
+# Função dependência usada nas rotas para extrair e validar o token JWT
+# Espera o header "Authorization: Bearer <token>".
+# Decodifica o token com SECRET_KEY e ALGORITHM e retorna o 'username' (sub).
+# Em caso de ausênca ou token inválido lança HTTP 401.
 def get_current_user(request: Request):
     token = request.headers.get("Authorization")
     if not token or not token.startswith("Bearer "):
@@ -35,6 +41,9 @@ def get_current_user(request: Request):
 
 
 # --- Criar utilizador ---
+# Endpoint POST /users/
+# Recebe um UserBase, encripta a password (bcrypt) antes de gravar na BD.
+# Retorna o utilizador criado (sem alterar lógica do schema).
 @router.post("/", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 def create_user(user: UserBase, current_user: str = Depends(get_current_user)):
     new_user = user.dict()
@@ -48,6 +57,8 @@ def create_user(user: UserBase, current_user: str = Depends(get_current_user)):
 
 
 # --- Listar utilizadores ---
+# Endpoint GET /users/
+# Retorna lista de utilizadores; remove campo _id e password dos objetos retornados.
 @router.get("/", response_model=list[UserOut])
 def list_users(current_user: str = Depends(get_current_user)):
     users = []
@@ -60,6 +71,9 @@ def list_users(current_user: str = Depends(get_current_user)):
 
 
 # --- Obter utilizador por ID ---
+# Endpoint GET /users/{user_id}
+# Converte user_id para ObjectId e procura na BD; 404 se não encontrado.
+# Remove campo password do resultado antes de retornar.
 @router.get("/{user_id}", response_model=UserOut)
 def get_user(user_id: str, current_user: str = Depends(get_current_user)):
     user = users_collection.find_one({"_id": ObjectId(user_id)})
@@ -74,6 +88,9 @@ def get_user(user_id: str, current_user: str = Depends(get_current_user)):
 
 
 # --- Atualizar utilizador ---
+# Endpoint PATCH /users/{user_id}
+# Aceita um dict com campos a atualizar; se password for fornecida, encripta-a antes.
+# Retorna o documento atualizado (sem password).
 @router.patch("/{user_id}", response_model=UserOut)
 def update_user(user_id: str, updated_data: dict, current_user: str = Depends(get_current_user)):
     existing_user = users_collection.find_one({"_id": ObjectId(user_id)})
@@ -95,6 +112,8 @@ def update_user(user_id: str, updated_data: dict, current_user: str = Depends(ge
 
 
 # --- Eliminar utilizador ---
+# Endpoint DELETE /users/{user_id}
+# Remove o documento da BD; retorna 204 no sucesso ou 404 se não existir.
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_user(user_id: str, current_user: str = Depends(get_current_user)):
     result = users_collection.delete_one({"_id": ObjectId(user_id)})
@@ -106,6 +125,10 @@ def delete_user(user_id: str, current_user: str = Depends(get_current_user)):
 
 
 # --- ✅ Alterar password ---
+# Endpoint POST /users/change-password
+# Corpo esperado: {"current_password": "...", "new_password": "..."}
+# Valida campos, verifica password atual com pwd_context.verify, e atualiza para a nova password encriptada.
+# Retorna mensagem de sucesso. Protegido por get_current_user (token).
 @router.post("/change-password")
 def change_password(request: Request, body: dict, current_user: str = Depends(get_current_user)):
     username = current_user
