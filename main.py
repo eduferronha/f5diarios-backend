@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routes import (
     auth, clients, contracts, presets, projects,
-    products, activities, tasks, partners, agenda, users
+    products, activities, tasks, partners, agenda, users, auth_microsoft
 )
 from dotenv import load_dotenv
 import os
@@ -38,6 +38,7 @@ app.include_router(agenda.router)
 app.include_router(users.router)
 app.include_router(presets.router)
 app.include_router(projects.router)
+app.include_router(auth_microsoft.router)
 
 @app.get("/")
 def home():

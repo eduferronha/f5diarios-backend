@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from jose import jwt
 from db import users_collection
 
-router = APIRouter(prefix="/auth", tags=["Auth"])
+router = APIRouter(prefix="/auth/entra", tags=["Auth Microsoft"])
 
 ALGORITHM = "HS256"
 REDIRECT_URI = "https://f5diarios-frontend.vercel.app/auth/callback"
