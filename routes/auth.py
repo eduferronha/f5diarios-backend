@@ -1,5 +1,5 @@
-from fastapi import APIRouter, HTTPException
-from jose import jwt
+from fastapi import APIRouter, HTTPException, Depends, Request
+from jose import jwt, JWTError
 from passlib.context import CryptContext
 from datetime import datetime, timedelta
 from schemas import UserCreate, UserLogin, UserOut
@@ -60,3 +60,38 @@ def login(user: UserLogin):
             "role": db_user.get("role", "user")
         }
     }
+
+
+@router.post("/refresh")
+def refresh_token(current_user = Depends(get_current_user)):
+    # Criar um novo token com +1 hora
+    new_token = create_access_token({
+        "sub": current_user["username"],
+        "role": current_user.get("role", "user")
+    })
+
+    return {"access_token": new_token}
+
+
+def get_current_user(request: Request):
+    auth_header = request.headers.get("Authorization")
+    if not auth_header:
+        raise HTTPException(status_code=401, detail="Token não fornecido.")
+
+    try:
+        token = auth_header.split(" ")[1]
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+
+        if username is None:
+            raise HTTPException(status_code=401, detail="Token inválido.")
+
+        db_user = users_collection.find_one({"username": username})
+
+        if db_user is None:
+            raise HTTPException(status_code=404, detail="Utilizador não encontrado.")
+
+        return db_user
+
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Token inválido ou expirado.")
