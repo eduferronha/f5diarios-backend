@@ -14,7 +14,8 @@ app = FastAPI(title="F5TCI Backend - Estrutura Modular")
 # Lista de origens autorizadas (local + produção)
 origins = [
     "http://localhost:3000",                       
-    "https://f5diarios-frontend.vercel.app"        
+    "https://f5diarios-frontend.vercel.app",
+    "https://polite-meadow-092d44603.3.azurestaticapps.net" 
 ]
 
 # Middleware CORS configurado corretamente
