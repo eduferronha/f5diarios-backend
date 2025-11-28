@@ -11,7 +11,7 @@ router = APIRouter(prefix="/auth/entra", tags=["Auth Microsoft"])
 ALGORITHM = "HS256"
 
 # URL para onde a Microsoft redireciona o utilizador após login.
-REDIRECT_URI = "https://polite-meadow-092d44603.3.azurestaticapps.net/auth/callback"
+REDIRECT_URI = "https://polite-meadow-092d44603.3.azurestaticapps.net/auth/entra/entra-callback"
 # REDIRECT_URI = "https://f5diarios-frontend.vercel.app/auth/callback"
 
 
