@@ -11,13 +11,13 @@ load_dotenv()
 
 app = FastAPI(title="F5TCI Backend - Estrutura Modular")
 
-# ✅ Lista de origens autorizadas (local + produção)
+# Lista de origens autorizadas (local + produção)
 origins = [
     "http://localhost:3000",                       
     "https://f5diarios-frontend.vercel.app"        
 ]
 
-# ✅ Middleware CORS configurado corretamente
+# Middleware CORS configurado corretamente
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -26,7 +26,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ Registo das rotas
+# Registo das rotas
 app.include_router(auth.router)
 app.include_router(clients.router)
 app.include_router(contracts.router)

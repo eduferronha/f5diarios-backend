@@ -5,66 +5,128 @@ from db import clients_collection
 from schemas import ClientBase, ClientOut
 from config import SECRET_KEY
 
-# Prefixo RESTful
+# Rota principal para clientes (prefixo /clients).
+# Inclui endpoints CRUD para registar, listar, atualizar e eliminar clientes.
 router = APIRouter(prefix="/clients", tags=["Clientes"])
 
+
 # --- Autenticação JWT ---
+# Função dependência usada para extrair e validar o token JWT enviado no cabeçalho:
+#    Authorization: Bearer <token>
+# O token é decodificado com SECRET_KEY e algoritmo HS256.
+# Se for válido, devolve o campo 'sub' (username do utilizador autenticado).
+# Caso falhe, lança HTTP 401.
 def get_current_user(request: Request):
     token = request.headers.get("Authorization")
+
     if not token or not token.startswith("Bearer "):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token ausente.")
-    
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token ausente."
+        )
+
     token = token.split(" ")[1]
+
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
         return payload.get("sub")
     except JWTError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token inválido."
+        )
+
 
 # --- Criar novo cliente ---
+# Endpoint POST /clients/
+# Recebe um ClientBase, converte para dict e insere na base de dados.
+# Retorna o cliente criado com o campo id convertido para string.
 @router.post("/", response_model=ClientOut, status_code=status.HTTP_201_CREATED)
 def create_client(client: ClientBase, user: str = Depends(get_current_user)):
     new_client = client.dict()
+
     result = clients_collection.insert_one(new_client)
+
     return {"id": str(result.inserted_id), **new_client}
 
+
 # --- Listar todos os clientes ---
+# Endpoint GET /clients/
+# Devolve a lista completa de clientes.
+# Para cada documento, converte _id → id e remove o campo _id antes de devolver.
 @router.get("/", response_model=list[ClientOut])
 def list_clients(user: str = Depends(get_current_user)):
     clients = []
+
     for c in clients_collection.find():
         c["id"] = str(c["_id"])
         c.pop("_id", None)
         clients.append(c)
+
     return clients
 
+
 # --- Obter cliente por ID ---
+# Endpoint GET /clients/{client_id}
+# Procura um cliente utilizando o ObjectId.
+# Se não existir, devolve HTTP 404.
+# Converte _id → id antes de devolver.
 @router.get("/{client_id}", response_model=ClientOut)
 def get_client(client_id: str, user: str = Depends(get_current_user)):
     client = clients_collection.find_one({"_id": ObjectId(client_id)})
+
     if not client:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cliente não encontrado")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Cliente não encontrado"
+        )
+
     client["id"] = str(client["_id"])
     client.pop("_id", None)
+
     return client
 
+
 # --- Atualizar cliente ---
+# Endpoint PATCH /clients/{client_id}
+# Atualização parcial: apenas os campos enviados são atualizados.
+# Se o cliente não existir, devolve 404.
+# Após atualização, o documento é buscado novamente e devolvido ao cliente.
 @router.patch("/{client_id}", response_model=ClientOut)
 def update_client(client_id: str, client_data: dict, user: str = Depends(get_current_user)):
     existing = clients_collection.find_one({"_id": ObjectId(client_id)})
-    if not existing:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cliente não encontrado")
 
-    clients_collection.update_one({"_id": ObjectId(client_id)}, {"$set": client_data})
+    if not existing:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Cliente não encontrado"
+        )
+
+    clients_collection.update_one(
+        {"_id": ObjectId(client_id)},
+        {"$set": client_data}
+    )
+
     updated = clients_collection.find_one({"_id": ObjectId(client_id)})
     updated["id"] = str(updated["_id"])
     updated.pop("_id", None)
+
     return updated
 
+
 # --- Eliminar cliente ---
+# Endpoint DELETE /clients/{client_id}
+# Remove o cliente identificado pelo ID fornecido.
+# Se não existir, devolve HTTP 404.
+# Em caso de sucesso, devolve apenas HTTP 204 (sem conteúdo).
 @router.delete("/{client_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_client(client_id: str, user: str = Depends(get_current_user)):
     result = clients_collection.delete_one({"_id": ObjectId(client_id)})
+
     if result.deleted_count == 0:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cliente não encontrado")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Cliente não encontrado"
+        )
+
     return None

@@ -48,12 +48,15 @@ def get_current_user(request: Request):
 def create_user(user: UserBase, current_user: str = Depends(get_current_user)):
     new_user = user.dict()
 
+    new_user["role"] = "user"
+
     # 🔐 Encriptar password antes de gravar
     if "password" in new_user:
         new_user["password"] = pwd_context.hash(new_user["password"])
 
     result = users_collection.insert_one(new_user)
     return {"id": str(result.inserted_id), **new_user}
+
 
 
 # --- Listar utilizadores ---

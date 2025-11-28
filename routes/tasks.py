@@ -12,18 +12,16 @@ from typing import Optional
 
 load_dotenv()
 API_KEY = os.getenv("API_KEY")
-# from dependencies import get_current_user  # o teu método de auth normal
 
 tasks_collection = db["tasks"]
 router = APIRouter(prefix="/tasks", tags=["Tarefas"])
 
-# --- Função auxiliar: obter utilizador autenticado ---
+
+# --- Autenticação completa (username + role) ---
+# Obtém tanto o utilizador autenticado como o papel associado (user/admin).
 def get_current_user_full(request: Request):
-    """
-    Extrai o username e o role do token JWT.
-    Retorna um dicionário com {"username": ..., "role": ...}
-    """
     token = request.headers.get("Authorization")
+
     if not token or not token.startswith("Bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -31,16 +29,20 @@ def get_current_user_full(request: Request):
         )
 
     token = token.split(" ")[1]
+
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
         username = payload.get("sub")
         role = payload.get("role", "user")
+
         if not username:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Token sem utilizador válido."
             )
+
         return {"username": username, "role": role}
+
     except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -48,39 +50,33 @@ def get_current_user_full(request: Request):
         )
 
 
+# --- Autenticação simples (apenas username) ---
+# Utilizado por operações que apenas necessitam identificar o autor da tarefa.
 def get_current_user(request: Request) -> str:
-    """
-    Extrai o utilizador (username) do token JWT no header Authorization.
-    """
     token = request.headers.get("Authorization")
+
     if not token or not token.startswith("Bearer "):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token ausente ou inválido.")
+        raise HTTPException(status_code=401, detail="Token ausente ou inválido.")
 
     token = token.split(" ")[1]
+
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
         username = payload.get("sub")
+
         if not username:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token sem utilizador válido.")
+            raise HTTPException(status_code=401, detail="Token sem utilizador válido.")
+
         return username
+
     except JWTError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido.")
+        raise HTTPException(status_code=401, detail="Token inválido.")
 
 
 # --- Criar nova tarefa ---
-# @router.post("/", response_model=TaskOut, status_code=status.HTTP_201_CREATED)
-# def create_task(task: TaskBase, username: str = Depends(get_current_user)):
-#     """
-#     Cria uma nova tarefa associada ao utilizador autenticado.
-#     """
-#     new_task = task.dict()
-#     new_task["username"] = username
-
-#     result = tasks_collection.insert_one(new_task)
-#     created_task = tasks_collection.find_one({"_id": result.inserted_id})
-#     created_task["id"] = str(created_task.pop("_id"))
-#     return created_task
-
+# Este endpoint suporta dois modos:
+# 1) x-api-key → utilizado por Copilot/PowerApps
+# 2) JWT → utilizado pelo website
 @router.post("", response_model=TaskOut, status_code=status.HTTP_201_CREATED)
 @router.post("/", response_model=TaskOut, status_code=status.HTTP_201_CREATED)
 async def create_task(
@@ -89,12 +85,13 @@ async def create_task(
     username: Optional[str] = Depends(lambda request=None: None)
 ):
     """
-    Cria uma nova tarefa.
-    - Se chamada com x-api-key → modo Copilot/PowerApps (usa email do utilizador e procura nome na coleção users)
-    - Se chamada com JWT → modo Website (associa ao utilizador autenticado)
+    Regista uma nova tarefa associada a um utilizador.
+    Suporta dois tipos de origem:
+    • PowerApps / Copilot — identifica o utilizador através de headers especiais
+    • Website — utiliza o JWT de autenticação
     """
 
-    # 🔍 Log do corpo recebido (Power Automate / Website)
+    # Log de depuração do corpo recebido
     try:
         body = await request.json()
         print("📩 [DEBUG] Dados recebidos no POST /tasks:")
@@ -104,39 +101,41 @@ async def create_task(
 
     client_key = request.headers.get("x-api-key")
 
-    # 🔹 1️⃣ Chamada via PowerApps / Copilot (x-api-key)
+    # --- 1️⃣ Origem PowerApps / Copilot ---
     if client_key and client_key == API_KEY:
         new_task = task.dict()
 
-        # Tenta identificar o utilizador a partir do email enviado no header
+        # Tenta identificar o utilizador com base no email enviado no header
         user_email = request.headers.get("x-user-email")
         print(f"📧 [DEBUG] Email recebido no header: {user_email}")
 
         if user_email:
             user = users_collection.find_one({"email": user_email})
+
             if user:
                 new_task["username"] = user.get("nome", user_email)
-                print(f"✅ [DEBUG] Utilizador encontrado na BD: {new_task['username']}")
+                print(f"✅ [DEBUG] Utilizador encontrado: {new_task['username']}")
             else:
-                new_task["username"] = user_email  # fallback — se não existir na coleção
-                print(f"⚠️ [DEBUG] Email não encontrado na coleção users, usando email como username.")
+                new_task["username"] = user_email
+                print("⚠️ [DEBUG] Email não registado, usando o próprio email como username.")
         else:
-            new_task["username"] = "copilot"  # fallback genérico
-            print(f"⚠️ [DEBUG] Nenhum email recebido, usando 'copilot' como username.")
+            new_task["username"] = "copilot"
+            print("⚠️ [DEBUG] Nenhum email recebido — usando 'copilot'.")
 
         result = tasks_collection.insert_one(new_task)
         created_task = tasks_collection.find_one({"_id": result.inserted_id})
         created_task["id"] = str(created_task.pop("_id"))
 
-        print("✅ [DEBUG] Tarefa criada com sucesso via x-api-key:", created_task)
+        print("✅ [DEBUG] Tarefa criada via x-api-key:", created_task)
         return created_task
 
-    # 🔹 2️⃣ Chamada via JWT (Website)
+    # --- 2️⃣ Origem Website via JWT ---
     token = request.headers.get("Authorization")
     if token and token.startswith("Bearer "):
         try:
             payload = jwt.decode(token.split(" ")[1], SECRET_KEY, algorithms=["HS256"])
             username = payload.get("sub")
+
             if username:
                 new_task = task.dict()
                 new_task["username"] = username
@@ -145,30 +144,21 @@ async def create_task(
                 created_task = tasks_collection.find_one({"_id": result.inserted_id})
                 created_task["id"] = str(created_task.pop("_id"))
 
-                print("✅ [DEBUG] Tarefa criada com sucesso via JWT:", created_task)
+                print("✅ [DEBUG] Tarefa criada via JWT:", created_task)
                 return created_task
+
         except JWTError:
             raise HTTPException(status_code=401, detail="Token inválido.")
 
-    # 🔹 3️⃣ Caso nenhum método de autenticação funcione
+    # --- 3️⃣ Sem autenticação válida ---
     raise HTTPException(status_code=401, detail="Não autorizado")
 
 
-# --- Listar tarefas do utilizador autenticado ---
-# @router.get("/", response_model=list[TaskOut])
-# def list_user_tasks(username: str = Depends(get_current_user)):
-#     """
-#     Lista todas as tarefas criadas pelo utilizador autenticado.
-#     """
-#     tasks = []
-#     for t in tasks_collection.find({"username": username}).sort("data", -1):
-#         t["id"] = str(t.pop("_id"))
-#         tasks.append(t)
-#     return tasks
-
-from typing import Optional
-from fastapi import Query
-
+# --- Listar tarefas ---
+# Permite listar tarefas com filtros dinâmicos.
+# Suporta:
+# • PowerApps/Copilot — acesso a todas as tarefas
+# • Website — apenas tarefas do utilizador autenticado
 @router.get("", response_model=list[dict])
 @router.get("/", response_model=list[dict])
 def list_user_tasks(
@@ -190,20 +180,21 @@ def list_user_tasks(
     local: Optional[str] = Query(None),
     valor_euro: Optional[float] = Query(None)
 ):
+    """
+    Lista tarefas, com opção de aplicar filtros flexíveis.
+    O comportamento depende da origem:
+    • PowerApps/Copilot → acesso completo
+    • Website → apenas tarefas associadas ao utilizador autenticado
+    """
 
-    """
-    Lista tarefas do utilizador autenticado (JWT)
-    OU todas as tarefas se for chamada via x-api-key (Copilot/PowerApps),
-    com possibilidade de filtrar por qualquer campo do schema TaskBase.
-    """
     client_key = request.headers.get("x-api-key")
 
-    # --- 1️⃣ Autenticação via API Key (Copilot/PowerApps) ---
+    # --- 1️⃣ Modo PowerApps/Copilot (x-api-key) ---
     if client_key and client_key == API_KEY:
         filtro = {}
 
-        # Cria o filtro dinâmico com base nos parâmetros recebidos
-        params = {
+        # Prepara dinamicamente os filtros
+        parametros = {
             "descricao": descricao,
             "cliente": cliente,
             "parceiro": parceiro,
@@ -218,35 +209,34 @@ def list_user_tasks(
             "faturavel": faturavel,
             "viagem_faturavel": viagem_faturavel,
             "local": local,
-            "valor_euro": valor_euro,
+            "valor_euro": valor_euro
         }
 
-        for campo, valor in params.items():
+        for campo, valor in parametros.items():
             if valor is not None:
-                # Strings → pesquisa flexível (regex, case-insensitive)
-                if isinstance(valor, str):
-                    filtro[campo] = {"$regex": valor, "$options": "i"}
-                else:
-                    filtro[campo] = valor
+                filtro[campo] = (
+                    {"$regex": valor, "$options": "i"} if isinstance(valor, str) else valor
+                )
 
-        # 🔹 Query ao MongoDB com os filtros aplicados
         tasks = []
         for t in tasks_collection.find(filtro).sort("data", -1).limit(200):
             t["id"] = str(t.pop("_id"))
             tasks.append(t)
+
         return tasks
 
-    # --- 2️⃣ Autenticação via JWT (modo Website) ---
+    # --- 2️⃣ Modo Website (JWT) ---
     token = request.headers.get("Authorization")
     if token and token.startswith("Bearer "):
         try:
             payload = jwt.decode(token.split(" ")[1], SECRET_KEY, algorithms=["HS256"])
             username = payload.get("sub")
+
             if username:
                 filtro = {"username": username}
 
-                # Também aplica filtros adicionais se o utilizador quiser filtrar
-                params = {
+                # Também aplica filtros opcionais fornecidos pelo utilizador
+                parametros = {
                     "descricao": descricao,
                     "cliente": cliente,
                     "parceiro": parceiro,
@@ -261,39 +251,44 @@ def list_user_tasks(
                     "faturavel": faturavel,
                     "viagem_faturavel": viagem_faturavel,
                     "local": local,
-                    "valor_euro": valor_euro,
+                    "valor_euro": valor_euro
                 }
 
-                for campo, valor in params.items():
+                for campo, valor in parametros.items():
                     if valor is not None:
-                        if isinstance(valor, str):
-                            filtro[campo] = {"$regex": valor, "$options": "i"}
-                        else:
-                            filtro[campo] = valor
+                        filtro[campo] = (
+                            {"$regex": valor, "$options": "i"} if isinstance(valor, str) else valor
+                        )
 
                 tasks = []
                 for t in tasks_collection.find(filtro).sort("data", -1).limit(200):
                     t["id"] = str(t.pop("_id"))
                     tasks.append(t)
+
                 return tasks
+
         except JWTError:
             raise HTTPException(status_code=401, detail="Token inválido.")
 
-    # --- 3️⃣ Caso nenhum método de autenticação funcione ---
+    # --- 3️⃣ Sem autenticação válida ---
     raise HTTPException(status_code=401, detail="Não autorizado")
 
 
+# --- Administrador: listar todas as tarefas ---
 @router.get("/all", response_model=list[dict])
 def list_all_tasks_admin(request: Request):
     """
-    Retorna todas as tarefas (de todos os utilizadores),
-    apenas se o utilizador autenticado tiver role = 'admin'.
+    Lista todas as tarefas existentes,
+    acessível apenas para utilizadores com papel de administrador.
     """
+
     token = request.headers.get("Authorization")
+
     if not token or not token.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Token ausente ou inválido.")
 
     token = token.split(" ")[1]
+
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
         role = payload.get("role", "user")
@@ -301,84 +296,93 @@ def list_all_tasks_admin(request: Request):
         raise HTTPException(status_code=401, detail="Token inválido.")
 
     if role != "admin":
-        raise HTTPException(status_code=403, detail="Acesso negado — apenas administradores podem ver todas as tarefas.")
+        raise HTTPException(status_code=403, detail="Acesso negado.")
 
     tasks = []
     for t in tasks_collection.find().sort("data", -1):
         t["id"] = str(t.pop("_id"))
         tasks.append(t)
-    return tasks
 
+    return tasks
 
 
 # --- Atualizar tarefa ---
 @router.put("/{task_id}", status_code=status.HTTP_200_OK)
 def update_task(task_id: str, updated: TaskBase, username: str = Depends(get_current_user)):
     """
-    Atualiza uma tarefa, apenas se pertencer ao utilizador autenticado.
+    Atualiza os detalhes de uma tarefa,
+    desde que esta pertença ao utilizador autenticado.
     """
+
     try:
         obj_id = ObjectId(task_id)
     except:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="ID inválido.")
+        raise HTTPException(status_code=400, detail="ID inválido.")
 
     task = tasks_collection.find_one({"_id": obj_id})
+
     if not task:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tarefa não encontrada.")
+        raise HTTPException(status_code=404, detail="Tarefa não encontrada.")
+
     if task.get("username") != username:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Sem permissão para editar esta tarefa.")
+        raise HTTPException(status_code=403, detail="Sem permissão para editar esta tarefa.")
 
     tasks_collection.update_one({"_id": obj_id}, {"$set": updated.dict()})
     return {"message": "Tarefa atualizada com sucesso!"}
+
 
 # --- Eliminar tarefa ---
 @router.delete("/{task_id}", status_code=status.HTTP_200_OK)
 def delete_task(task_id: str, username: str = Depends(get_current_user)):
     """
-    Elimina uma tarefa, apenas se pertencer ao utilizador autenticado.
+    Elimina uma tarefa pertencente ao utilizador autenticado.
     """
+
     try:
         obj_id = ObjectId(task_id)
     except:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="ID inválido.")
+        raise HTTPException(status_code=400, detail="ID inválido.")
 
     task = tasks_collection.find_one({"_id": obj_id})
+
     if not task:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tarefa não encontrada.")
+        raise HTTPException(status_code=404, detail="Tarefa não encontrada.")
+
     if task.get("username") != username:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Sem permissão para eliminar esta tarefa.")
+        raise HTTPException(status_code=403, detail="Sem permissão para eliminar esta tarefa.")
 
     tasks_collection.delete_one({"_id": obj_id})
     return {"message": "Tarefa eliminada com sucesso!"}
 
 
-
+# --- Administrador: obter atividade mensal ---
 @router.get("/atividade")
 def get_atividade(request: Request, mes: int):
     """
-    Retorna todas as tarefas do mês selecionado (de todos os utilizadores),
-    acessível apenas para administradores.
+    Obtém todas as tarefas de um mês específico,
+    acessível apenas para utilizadores administradores.
     """
-    # 🔹 Extrai username e role diretamente do token (sem Depends)
+
     token = request.headers.get("Authorization")
+
     if not token or not token.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Token ausente ou inválido.")
 
     token = token.split(" ")[1]
+
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-        username = payload.get("sub")
         role = payload.get("role", "user")
     except JWTError:
         raise HTTPException(status_code=401, detail="Token inválido.")
 
     if role != "admin":
-        raise HTTPException(status_code=403, detail="Acesso negado — apenas administradores podem ver todas as atividades.")
+        raise HTTPException(status_code=403, detail="Acesso negado.")
 
-    # 🔹 Busca todas as tarefas do mês
     tarefas = list(tasks_collection.find({}))
     resultados = []
 
+    # Avalia vários formatos de data suportados
     for t in tarefas:
         data_str = t.get("data")
         if not data_str:
@@ -401,12 +405,8 @@ def get_atividade(request: Request, mes: int):
                 "cliente": t.get("cliente"),
                 "contrato": t.get("contrato"),
                 "data": data.strftime("%Y-%m-%d"),
-                # "horas": t.get("tempo_atividade") or t.get("tempo_faturado") or "00:00"
                 "tempo_atividade": t.get("tempo_atividade")
             })
 
     resultados.sort(key=lambda x: (x["username"], x["data"]))
     return resultados
-
-
-#S
